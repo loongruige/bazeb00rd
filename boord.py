@@ -36,10 +36,9 @@ class Boord:
 		self.receivesocket = None
 		self.controlsocket = None
 		self.calibration = []
-		self.calibrationRequested = False
+		self.calibrated = False
 		self.LED = False
 		self.address = None
-		self.buttonDown = False
 		for i in range(3):
 			self.calibration.append([])
 			for j in range(4):
@@ -152,9 +151,9 @@ class Boord:
 					# I can't find anything else lol
 					# And also, I don't really know what the 7 is about, I will research it further.
 					if packet_length == 16:
-						self.calibration = [fetch_data(fetch_data(data, "TO_STRING")[0:8]), "DECODED"), fetch_data(fetch_data(data, "TO_STRING")[8:16]), "DECODED"), [1e4]*4)]
+						self.calibration = [fetch_data(fetch_data(data, "TO_STRING")[0:8], "DECODED"), fetch_data(fetch_data(data, "TO_STRING")[8:16]), "DECODED"), [1e4]*4)]
 					elif packet_length < 16:
-						self.calibration[2] = [fetch_data(fetch_data(data, "TO_STRING")[0:8]), "DECODED")]
+						self.calibration[2] = [fetch_data(fetch_data(data, "TO_STRING")[0:8], "DECODED")]
 					else:
 						logging.error("Something went wrong with the calibration...")
 						logging.debug(f"Here's what the data was: {data}")
@@ -163,11 +162,12 @@ class Boord:
 					# calibration[1] is calibration values for 17kg
 					# and calibration[2] is calibration values for 37kg
 				elif f_data == EXTENSION_8BYTES or f_data == "32":
-					self.button_check(fetch_data(data[6:], "ENCODED")[0])
+					self.button_check(fetch_data(data, "ENCODED")[6:][0])
 					# The above code checks for the button press. If the value is 80 then the button is pressed.
 					# If it's 00, it's not pressed.
 					
-					self.parse_cal(fetch_data(data[6:], "ENCODED").remove(fetch_data(data[6:], "ENCODED")[0]))
+					self.parse_cal(fetch_data(data, "TO_STRING")[8:])
+					self.report(fetch_data(data, "TO_STRING")[8:])
 					# This might seem a bit confusing... it is!
 					# Let me show this with an example:
 					# "a13200000aa54c9c0b3b0630"
@@ -187,6 +187,76 @@ class Boord:
 					#   7 > Bottom left
 					#   8 > Bottom left
 					# So we would just need it after the 6th character, split it up to 8 (or maybe 4) and work with that!
+	def send_data(self, *data):
+			listed = "52" + data
+			end_str = ""
+			for g in listed:
+				end_str += str(g)
+			self.controlsocket.send(end_str)
 
-					
- # Rest will be written when I switch to local files, I wrote all of these in GitHub, without any debugging.
+	def button_check(self, data):
+		if data == "80":
+			logging.info("The button is being pressed down.")
+		else:
+			pass
+
+	def parse_cal(self, data):
+		index = 0
+		if self.calibrated:
+			pass
+		else:
+			byte = wrap(data, 4)
+			if len(data) == 16:
+				for a in range(2):
+					for b in range(4):
+						self.calibration[a][b] = (int(byte[index], 16) << 8)
+						index += 1
+			elif len(data) < 16:
+				for b in range(4):
+					self.calibration[2][b] = (int(byte[index], 16) << 8)
+					index +=1
+			self.calibrated = True
+
+		# Explanation:
+		# We split the mass data to 4, one for each part of the board
+		# We assign those values to the calibrations.
+		# The for loops are for assigning all 4 sides in 2 ways (both 0kg and 17kg)
+		# If the data is less than 16 bytes then we assign it all to 34kg
+
+	def calc_mass(self, raw, pos):
+		val = 0.0
+		kg0 = self.calibration[0][pos]
+		kg17 = self.calibration[1][pos]
+		kg34 = self.calibration[2][pos]
+		kg = [kg0, kg17, kg34]
+		# Easy accesibilyiyı9tjwol (I don't know how to spell it)
+		if raw < kg[0]:
+			return 0.0
+		elif raw < kg[1]:
+			return 17 * ((raw - kg[0]) / float((kg[1] - kg[0])))
+		elif raw > kg[1]
+			return 34 * ((raw - kg[1]) / float((kg[2] - kg[1])))
+		else:
+			logging.critical("Something went wrong while calculating mass...")
+			logging.debug("Calibration values:\nKG0 {kg0}\nKG17{kg17}\nKG34 {kg34}\nALL {self.calibration}")
+
+	def report(self, data):
+		byte = wrap(data, 4)
+
+		TR = self.calc_mass(hex2int(byte[0]), TOPRIGHT)
+		BR = self.calc_mass(hex2int(byte[1]), BOTRIGHT)
+		TL = self.calc_mass(hex2int(byte[2]), TOPLEFT)
+		BL = self.calc_mass(hex2int(byte[3]), BOTLEFT)
+
+		return {
+			"top_right": tr
+			"bottom_right": br
+			"top_left": tl
+			"bottom_left": bl
+			"left": (tl + bl) / 2 # Avg. left value
+			"right": (tr + br) / 2 # Avg. right value
+			"total": (tr + br + tl + bl) / 4 # Avg. of all values
+			"total_weight": tr + br + tl + bl # Total of all weighs
+		}
+
+# Time to write some code to try it out.
