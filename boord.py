@@ -20,12 +20,17 @@ COMMAND_READ_REGISTER    = b"\x17"
 INPUT_STATUS             = "20"
 INPUT_READ_DATA          = "21"
 EXTENSION_8BYTES         = "32"
-BT_NAME                  = "Nintendo RVL-WBC 01"
+TOPRIGHT = 0
+TOPLEFT = 2
+BOTLEFT = 3
+BOTRIGHT = 1
+BT_NAME                  = "Nintendo RVL-WBC-01"
 LOCAL_CALIBRATION_SAMPLE = ["a1210000f000240bc54c890b66075f1286533c12410e12", ""] # First packet, second packet will be entered later.
 LOCAL_DATA_SAMPLE        = "a13200000aa54c9c0b3b0630"
 
 import bluetooth
 import sys
+import time
 import logging
 
 logging.basicConfig(format='%(levelname)s ] %(message)s', level=logging.INFO) # Change this to logging.DEBUG to debug the module.
@@ -39,10 +44,6 @@ class Boord:
 		self.calibrated = False
 		self.LED = False
 		self.address = None
-		for i in range(3):
-			self.calibration.append([])
-			for j in range(4):
-				self.calibration[i][j].append(10000)  # high dummy value so events with it don't register
 
 		self.connect = False
 		try:
@@ -52,28 +53,22 @@ class Boord:
 			logging.critical("Bluetooth could not be located.")
 			logging.debug("L2CAP couldn't be enabled")
 		 
-	def discover(self, sec=6, autoconnect=False):
+	def discover(self, sec=6):
 		if self.connect:
 			logging.info("Already connected to boord. No need to discover again.")
 			logging.debug("If it's not, try restarting the app.")
 		else:
-			adress = None
+			address = None
 			logging.info("Press the red (or black, if you're too cool) sync button in the battery slot of the board.")
 			logging.info("I will start scanning now, make sure your boord will still be in sync mode for 6 seconds.")
 			bluetooth_address = bluetooth.discover_devices(duration=sec, lookup_names=True) 
 			logging.debug(f"List of devices: {bluetooth_address}")
 			for device in bluetooth_address:
-				if device[1] == BT_NAME:
-					address = device[0]
-					logging.info(f"Got it! A boord was found. ({address})")for bluetoothdevice in bluetoothdevices:
-			if bluetoothdevice[1] == BLUETOOTH_NAME:
-				address = bluetoothdevice[0]
-				print(f"Found Wiiboard at address {address}")
-					if autoconnect:
-						self.connect(address)
-					else:
-						pass
-				else
+				if device == BT_NAME:
+					address = device
+					logging.info(f"Got it! A boord was found. ({address})")
+					return address
+				else:
 					logging.error("Hm... Couldn't find a boord. Trying again in 3 seconds.")
 					time.sleep(2.9727) # Troll wwwww
 					self.discover()
@@ -110,7 +105,7 @@ class Boord:
 				end_value = wrap(data[2:], 2)
 				# If the values start with a1, it's most likely in a receive loop. We do not need the first byte.
 				# We would only need the first byte to determine what type the data is and the rest.
-			else
+			else:
 				end_value = wrap(data, 2)
 				# This is just common wrapping
 			return end_value
@@ -151,7 +146,7 @@ class Boord:
 					# I can't find anything else lol
 					# And also, I don't really know what the 7 is about, I will research it further.
 					if packet_length == 16:
-						self.calibration = [fetch_data(fetch_data(data, "TO_STRING")[0:8], "DECODED"), fetch_data(fetch_data(data, "TO_STRING")[8:16]), "DECODED"), [1e4]*4)]
+						self.calibration = [fetch_data(fetch_data(data, "TO_STRING")[0:8], "DECODED"), fetch_data(fetch_data(data, "TO_STRING")[8:16], "DECODED"), [1e4]*4]
 					elif packet_length < 16:
 						self.calibration[2] = [fetch_data(fetch_data(data, "TO_STRING")[0:8], "DECODED")]
 					else:
@@ -167,7 +162,8 @@ class Boord:
 					# If it's 00, it's not pressed.
 					
 					self.parse_cal(fetch_data(data, "TO_STRING")[8:])
-					self.report(fetch_data(data, "TO_STRING")[8:])
+					report = self.report(fetch_data(data, "TO_STRING")[8:])
+					return report
 					# This might seem a bit confusing... it is!
 					# Let me show this with an example:
 					# "a13200000aa54c9c0b3b0630"
@@ -234,7 +230,7 @@ class Boord:
 			return 0.0
 		elif raw < kg[1]:
 			return 17 * ((raw - kg[0]) / float((kg[1] - kg[0])))
-		elif raw > kg[1]
+		elif raw > kg[1]:
 			return 34 * ((raw - kg[1]) / float((kg[2] - kg[1])))
 		else:
 			logging.critical("Something went wrong while calculating mass...")
@@ -249,14 +245,24 @@ class Boord:
 		BL = self.calc_mass(hex2int(byte[3]), BOTLEFT)
 
 		return {
-			"top_right": tr
-			"bottom_right": br
-			"top_left": tl
-			"bottom_left": bl
-			"left": (tl + bl) / 2 # Avg. left value
-			"right": (tr + br) / 2 # Avg. right value
-			"total": (tr + br + tl + bl) / 4 # Avg. of all values
-			"total_weight": tr + br + tl + bl # Total of all weighs
+			"top_right": tr,
+			"bottom_right": br,
+			"top_left": tl,
+			"bottom_left": bl,
+			"left": (tl + bl) / 2, # Avg. left value
+			"right": (tr + br) / 2, # Avg. right value
+			"total": (tr + br + tl + bl) / 4, # Avg. of all values
+			"total_weight": tr + br + tl + bl, # Total of all weighs
 		}
 
 # Time to write some code to try it out.
+
+def test():
+	b00rd = Boord()
+	addr = b00rd.discover(4)
+	b00rd.connect(addr)
+	receive = b00rd.receive_loop()
+	print(receive["top_right"])
+
+if __name__ == "__main__":
+	test()
