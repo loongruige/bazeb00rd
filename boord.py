@@ -11,12 +11,12 @@
 
 version = "0.1"
 
-CONTINUOUS_REPORTING     = b"\x04"
-COMMAND_LIGHT            = b"\x11"
-COMMAND_REPORTING        = b"\x12"
-COMMAND_REQUEST_STATUS   = b"\x15"
-COMMAND_REGISTER         = b"\x16"
-COMMAND_READ_REGISTER    = b"\x17"
+CONTINUOUS_REPORTING     = "04"
+COMMAND_LIGHT            = "11"
+COMMAND_REPORTING        = "12"
+COMMAND_REQUEST_STATUS   = "15"
+COMMAND_REGISTER         = "16"
+COMMAND_READ_REGISTER    = "17"
 INPUT_STATUS             = "20"
 INPUT_READ_DATA          = "21"
 EXTENSION_8BYTES         = "32"
@@ -32,68 +32,15 @@ import bluetooth
 import sys
 import time
 import logging
+from textwrap import wrap
+import binascii
 
-logging.basicConfig(format='%(levelname)s ] %(message)s', level=logging.INFO) # Change this to logging.DEBUG to debug the module.
+if sys.argv[1]:
+	logging.basicConfig(format='D [ %(levelname)s ] %(message)s', level=logging.DEBUG) # If you run it with "python3 boord.py debug" it will just debug it.
+else:
+	logging.basicConfig(format='D [ %(levelname)s ] %(message)s', level=logging.INFO)
 
-
-class Boord:
-	def __init__(self):
-		self.receivesocket = None
-		self.controlsocket = None
-		self.calibration = []
-		self.calibrated = False
-		self.LED = False
-		self.address = None
-
-		self.connect = False
-		try:
-			self.receivesocket = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-			self.controlsocket = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-		except ValueError:
-			logging.critical("Bluetooth could not be located.")
-			logging.debug("L2CAP couldn't be enabled")
-		 
-	def discover(self, sec=6):
-		if self.connect:
-			logging.info("Already connected to boord. No need to discover again.")
-			logging.debug("If it's not, try restarting the app.")
-		else:
-			address = None
-			logging.info("Press the red (or black, if you're too cool) sync button in the battery slot of the board.")
-			logging.info("I will start scanning now, make sure your boord will still be in sync mode for 6 seconds.")
-			bluetooth_address = bluetooth.discover_devices(duration=sec, lookup_names=True) 
-			logging.debug(f"List of devices: {bluetooth_address}")
-			for device in bluetooth_address:
-				if device == BT_NAME:
-					address = device
-					logging.info(f"Got it! A boord was found. ({address})")
-					return address
-				else:
-					logging.error("Hm... Couldn't find a boord. Trying again in 3 seconds.")
-					time.sleep(2.9727) # Troll wwwww
-					self.discover()
-					
-	def connect(address):
-		if self.connect:
-			logging.info("Already connected to boord. No need to connect again.")
-		else:
-			logging.info("Trying to etablish connection...")
-			logging.debug("Connecting control socket first")
-			try:
-				self.controlsocket.connect((address, 0x11))
-				logging.debug("Connection successful!")
-			except Exception as err:
-				logging.error("Couldn't connect with the control socket... Try again.")
-				logging.debug(f"Error: {err}")
-			logging.debug("Connecting receive socket now")
-			try:
-				self.receivesocket.connect((address, 0x13))
-				logging.debug("Connection successful!")
-			except Exception as err:
-				logging.error("Couldn't connect with the receive socket... Try again.")
-				logging.debug(f"Error: {err}")
-			logging.info("Sucessfully connected both the control and receive socket!")
-	def fetch_data(self, data):
+def fetch_data(data, type):
 		# The data given should be either like LOCAL_DATA_SAMPLE or should go like \x00\x11\x22 (example)
 		# For just a string (11223344aabb), use "DECRYPT"
 		# For a hex string (\x11\x22\xab), use "ENCODED"
@@ -112,16 +59,77 @@ class Boord:
 		elif type == "ENCODED":
 			# This is a string that goes like \x11\x22\x33
 			value = data.hex()
-			fetch_data(value, "DECRYPT")
+			return fetch_data(value, "DECRYPT")
 		elif type == "TO_STRING":
 			# This is just for converting it to a sting
 			return data.hex()
 
-	def hex2int(self, data):
-		return int(str(data), 16)
-		# Very simple hex to decimal function
+def hex2int(data):
+	return int(str(data), 16)
+	# Very simple hex to decimal function
+
+class Boord:
+	def __init__(self):
+		self.receivesocket = None
+		self.controlsocket = None
+		self.calibration = []
+		self.calibrated = False
+		self.LED = False
+		self.address = None
+		self.connection = False
+		try:
+			self.receivesocket = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+			self.controlsocket = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+		except ValueError:
+			logging.critical("Bluetooth could not be located.")
+			logging.debug("L2CAP couldn't be enabled")
+		 
+	def discover(self, sec=6):
+		address = None
+		if self.connection:
+			logging.info("Already connected to boord. No need to discover again.")
+			logging.debug("If it's not, try restarting the app.")
+		else:
+			logging.info("Press the red (or black, if you're too cool) sync button in the battery slot of the board.")
+			logging.info(f"I will start scanning now, make sure your boord will still be in sync mode for {sec} seconds.")
+			bluetooth_address = bluetooth.discover_devices(duration=sec, lookup_names=True) 
+			logging.debug(f"Address list: {bluetooth_address}")
+			for device in bluetooth_address:
+				if device[1] == BT_NAME or device[1] == "Nintendo RVL-WBC-01":
+					address = device[0]
+					logging.info(f"A boord has been found! ({address})")
+			if address is None:
+				logging.info("Couldn't find any boords. Trying again in 3 seconds.")
+				time.sleep(2.9727) # I rewrote this but the troll is still here wwwww
+		return address
+			# I did it the wrong way				
+					
+	def connect(self, address):
+		if address is None:
+			logging.error("Non-existant address. Check the input")
+			return
+		if self.connection:
+			logging.info("Already connected to boord. No need to connect again.")
+		else:
+			logging.info("Trying to etablish connection...")
+			logging.debug("Connecting control socket first")
+			try:
+				self.controlsocket.connect((address, 0x11))
+				logging.debug("Connection successful!")
+			except Exception as err:
+				logging.error("Couldn't connect with the control socket... Try again.")
+				logging.debug(f"Error: {err}")
+			logging.debug("Connecting receive socket now")
+			try:
+				self.receivesocket.connect((address, 0x13))
+				logging.debug("Connection successful!")
+			except Exception as err:
+				logging.error("Couldn't connect with the receive socket... Try again.")
+				logging.debug(f"Error: {err}")
+			logging.info("Sucessfully connected both the control and receive socket!")
+			self.send_data(COMMAND_READ_REGISTER, "04a400240018") # Sends calibration data
 		
-	def recieve_loop(self):
+	def receive_loop(self):
 		if self.connect:
 			while self.connect:
 				data = self.receivesocket.recv(25)
@@ -183,12 +191,13 @@ class Boord:
 					#   7 > Bottom left
 					#   8 > Bottom left
 					# So we would just need it after the 6th character, split it up to 8 (or maybe 4) and work with that!
+
 	def send_data(self, *data):
-			listed = "52" + data
-			end_str = ""
-			for g in listed:
-				end_str += str(g)
-			self.controlsocket.send(end_str)
+		temp_data = ""
+		for n in data:
+			temp_data += n
+		end_str = b"\x52" + binascii.unhexlify(temp_data)
+		self.controlsocket.send(end_str)
 
 	def button_check(self, data):
 		if data == "80":
@@ -259,8 +268,8 @@ class Boord:
 
 def test():
 	b00rd = Boord()
-	addr = b00rd.discover(4)
-	b00rd.connect(addr)
+	found = b00rd.discover(4) # This will loop until a boord has been found
+	b00rd.connect(found)
 	receive = b00rd.receive_loop()
 	print(receive["top_right"])
 
